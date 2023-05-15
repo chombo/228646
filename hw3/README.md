@@ -40,7 +40,7 @@ Ver Cluster Port Status Owner    Data directory              Log file
 
 ```shell
 root@test-Postgresql1:/# sudo su  postgres
-postgres@akd-223-test-etp20-app1:/$ psql
+postgres@test-Postgresql1:/$ psql
 psql (15.2 (Ubuntu 15.2-1.pgdg20.04+1))
 Type "help" for help.
 
