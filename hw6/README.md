@@ -183,28 +183,39 @@ postgres=# select
            where (db.datname = 'hw6' or db.datname is null)
              and not lock.pid = pg_backend_pid()
            order by lock.pid;
-locktype       | relation |       mode       | tid | vtid | pid  | granted 
+  locktype       | relation |       mode       | tid | vtid | pid  | granted 
 ---------------+----------+------------------+-----+------+------+---------
- transactionid |          | ExclusiveLock    | 770 | 10/5 | 9702 | t
- relation      | 32770    | RowExclusiveLock |     | 10/5 | 9702 | t
- virtualxid    |          | ExclusiveLock    |     | 10/5 | 9702 | t
- tuple         | 32770    | ExclusiveLock    |     | 11/5 | 9713 | t
- relation      | 32770    | RowExclusiveLock |     | 11/5 | 9713 | t
- virtualxid    |          | ExclusiveLock    |     | 11/5 | 9713 | t
- transactionid |          | ExclusiveLock    | 771 | 11/5 | 9713 | t
- transactionid |          | ShareLock        | 770 | 11/5 | 9713 | f
- transactionid |          | ExclusiveLock    | 772 | 12/4 | 9722 | t
- virtualxid    |          | ExclusiveLock    |     | 12/4 | 9722 | t
- relation      | 32770    | RowExclusiveLock |     | 12/4 | 9722 | t
- tuple         | 32770    | ExclusiveLock    |     | 12/4 | 9722 | f
+   transactionid |          | ExclusiveLock    | 770 | 10/5 | 9702 | t
+   relation      | 32770    | RowExclusiveLock |     | 10/5 | 9702 | t
+   virtualxid    |          | ExclusiveLock    |     | 10/5 | 9702 | t
+   tuple         | 32770    | ExclusiveLock    |     | 11/5 | 9713 | t
+   relation      | 32770    | RowExclusiveLock |     | 11/5 | 9713 | t
+   virtualxid    |          | ExclusiveLock    |     | 11/5 | 9713 | t
+   transactionid |          | ExclusiveLock    | 771 | 11/5 | 9713 | t
+   transactionid |          | ShareLock        | 770 | 11/5 | 9713 | f
+   transactionid |          | ExclusiveLock    | 772 | 12/4 | 9722 | t
+   virtualxid    |          | ExclusiveLock    |     | 12/4 | 9722 | t
+   relation      | 32770    | RowExclusiveLock |     | 12/4 | 9722 | t
+   tuple         | 32770    | ExclusiveLock    |     | 12/4 | 9722 | f
 (12 rows)
-
 
 ```
 
-## *
+1,3,6,7,9 - получены ExclusiveLock идентификаторы транзакции и виртуальной транзакции
+8 - не получена ShareLock (на запись), ждет пока блокировка ExclusiveLock транзакции 770 не будет снята
+2,5,11 - получены RowExclusiveLock на строку в таблице
+4 - получена ExclusiveLock блокировка кортежа
+12 - не получена ExclusiveLock кортежа (ждет снятия ExclusiveLock на tuple процесса 9713  )
+
+## *****
 Воспроизведите взаимоблокировку трех транзакций. Можно ли разобраться в ситуации постфактум, изучая журнал сообщений?
+
+
 Могут ли две транзакции, выполняющие единственную команду UPDATE одной и той же таблицы (без where), заблокировать друг друга?
+
+
+
+
 Задание со звездочкой*
 Попробуйте воспроизвести такую ситуацию.
 

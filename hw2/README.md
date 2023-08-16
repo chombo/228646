@@ -9,7 +9,7 @@ docker network create nw-postgres
 docker run -d --rm --name postgres_1 -e POSTGRES_PASSWORD=postgres \
 --network nw-postgres \
 -p 5432:5432 \
--v ~/hw2/tmp/data:/var/lib/postgresql/data postgres:15.2-alpine3.17
+-v /Users/chombo/Documents/project/chombo/otus/228646/hw11/tmp/data:/var/lib/postgresql postgres:15.2-alpine3.17
 ```
 
 ```shell
