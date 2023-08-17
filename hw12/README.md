@@ -1,33 +1,16 @@
-# Сбор и использование статистики 
+# Секционирование таблицы
 
-Пред-история - есть небольшой проект на поддержке - из разряда написали и забыли.
-В какой-то момент начали возникать проблемы:
-аликешен выбирал все разрешенные ему соединеия, проседание 
-производительности сервера базы даннных (на сервере несколько баз разлиных проектов)
+Продолжаем пытаться как-то уживаться те что не нравиться - но активно используется.
+После очистики старых данных(фактически более чем за 3 месяца они не нужны)
+public | notifications      | table  | 18 GB      |
 
-![мониторинг](img/img4.png "Title")
-![мониторинг](img/img1.png "Title")
-![мониторинг](img/img3.png "Title")
-
-В процессе анализа было выявленно отсутвие каких либо либо индексов 
-на таблицах. Необходимость изменения параметров автовакума.
-
-Был выполнен vacuum full одной из таблиц (в тот момент ее размер достиг 80Gi)
-Установлено pgcompacttable и pgstattuple.
-
-В связи с отсутствием разработки в проекте - изменеие апи, струкруры данных или логики - невозможно.
-Делаем что можем называется.
-
-
-Основной проблемный запрос на тот момент:
+select count(*) from notifications;
+count
+---------
+7517901
+(1 row)
 
 ```sql
-SELECT id, distribution_id, created_at, title, from_who, body, send_to, receiver, channel, status, original_body, report FROM notifications WHERE channel IN (1)  AND (status IN (3) ) AND title LIKE $1 AND receiver = $2 ORDER BY created_at DESC LIMIT 5 OFFSET 0
-SELECT id, distribution_id, created_at, title, from_who, body, send_to, receiver, channel, status, original_body, report FROM notifications WHERE channel IN (1)  AND (status IN (3) ) AND title LIKE $1 AND receiver = $2 ORDER BY created_at DESC LIMIT 5 OFFSET 0
-```
-
-```sql
-
 create table notifications (
     id bigserial primary key,
     distribution_id bigint references distributions(id),
@@ -43,24 +26,70 @@ create table notifications (
     report text
 );
 ```
-После анализа вариантов, были добавлены 3 индекса:
+
+После перехода с PostgreSQL 10.23 PostgreSQL 14.5 появился простой план:
+
+- копируем данные из таблицы
+- удаляем текущую
+- создаем таблицу
+- создаем секции по месяцам
+- переносим данные (ну мы помним что надо 3 последних месяца - остальное отправляем в архив)
+- в коде добавляем обязательное указание дат в запросах (с этмим можно справиться не сильно изменяя код приложения)
+
 
 ```sql
-CREATE INDEX IF NOT EXISTS notifications_title_gin_idx ON notifications using GIN(title gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS notifications_create_at_idx ON notifications (created_at DESC);
-CREATE INDEX IF NOT EXISTS notifications_receiver_idx ON notifications USING btree (receiver) WHERE (channel = (1)::numeric);
-```
-Дополнительно пришлось править в код - чтобы убрать варианты запросов с LIKE = '%%'
+create table notifications_save as (select * from notifications);
 
-И следующий проблемный запрос
+drop table notifications;
+
+create table notifications (
+    id bigserial,
+    distribution_id bigint references distributions(id),
+    created_at timestamp default now() not null,
+    title text not null,
+    from_who text not null,
+    body text not null,
+    send_to text not null,
+    channel numeric not null,
+    receiver text references users(uid),
+    status bigint not null references status_types(id),
+    original_body json default '{}'::json not null,
+    report text
+) partition by range (created_at);
+
+alter table notifications add constraint pk_notifications primary key (created_at,id);
+
+CREATE TABLE notifications_2023_05 PARTITION OF notifications FOR VALUES FROM ('2023-05-01 00:00:00') to ('2023-06-01 00:00:00');
+CREATE TABLE notifications_2023_06 PARTITION OF notifications FOR VALUES FROM ('2023-06-01 00:00:00') to ('2023-07-01 00:00:00');
+CREATE TABLE notifications_2023_07 PARTITION OF notifications FOR VALUES FROM ('2023-07-01 00:00:00') to ('2023-08-01 00:00:00');
+CREATE TABLE notifications_2023_08 PARTITION OF notifications FOR VALUES FROM ('2023-08-01 00:00:00') to ('2023-09-01 00:00:00');
+CREATE TABLE notifications_2023_09 PARTITION OF notifications FOR VALUES FROM ('2023-09-01 00:00:00') to ('2023-10-01 00:00:00');
+CREATE TABLE notifications_default PARTITION OF notifications DEFAULT;
+
+```
 
 ```sql
-SELECT id, distribution_id, created_at, title, from_who, body, send_to, receiver, channel, status, original_body, report FROM notifications WHERE channel IN (1)  AND (status IN (3) ) AND receiver = 'uuid' ORDER BY created_at DESC LIMIT 5 OFFSET 0;
-```
-```sql
-CREATE INDEX IF NOT EXISTS notifications_csr_ndx on notifications(channel,status,receiver) ;
-CREATE INDEX IF NOT EXISTSnotifications_csrd_ndx on notifications (receiver, channel, status, created_at DESC);
-```
-explain - не сохранился к сожалению
+notifications-test=# INSERT INTO notifications (SELECT * FROM notifications);
+INSERT 0 3000641
 
-PS Как бы не хотелось выполнить оба варианта - наличие свободного времени диктует свои правила
+notifications-test=# SELECT count(*) FROM notifications;
+count
+---------
+3000641
+(1 row)
+
+notifications-test=# SELECT count(*) FROM notifications_save;
+count
+---------
+3000641
+(1 row)
+
+
+INSERT INTO notifications (distribution_id, title, from_who, body, send_to, channel, receiver, status, original_body) VALUES (58109, 'Созданы', 'Reserve', 'Здравствуйте', 'm.simonenko@etpgpb.ru', 2, 'e2fc1ddf-9ef1-4553-97a7-08cc87a6935d', 3, '{}');
+notifications-test=# SELECT count(*) FROM notifications_2023_08 WHERE title='Созданы';
+count
+-------
+     2
+(1 row)
+```
+
