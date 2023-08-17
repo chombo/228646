@@ -210,6 +210,60 @@ postgres=# select
 ## *****
 Воспроизведите взаимоблокировку трех транзакций. Можно ли разобраться в ситуации постфактум, изучая журнал сообщений?
 
+Выполням в 3х терминалах по шагам
+setep 1: BEGIN;
+setep 2: SELECT * FROM hw6 WHERE id = 1 FOR UPDATE;
+setep 3: SELECT * FROM hw6 WHERE id = 2 FOR UPDATE;
+
+setep 1: BEGIN;
+setep 2: SELECT * FROM hw6 WHERE id = 2 FOR UPDATE;
+setep 3: SELECT * FROM hw6 WHERE id = 3 FOR UPDATE;
+
+setep 1: BEGIN;
+setep 2: SELECT * FROM hw6 WHERE id = 3 FOR UPDATE;
+setep 3: SELECT * FROM hw6 WHERE id = 1 FOR UPDATE;
+
+В третьем получаем:
+hw6=*# SELECT * FROM hw6 WHERE id = 1 FOR UPDATE;
+ERROR:  deadlock detected
+DETAIL:  Process 80 waits for ShareLock on transaction 737; blocked by process 62.
+Process 62 waits for ShareLock on transaction 738; blocked by process 72.
+Process 72 waits for ShareLock on transaction 739; blocked by process 80.
+HINT:  See server log for query details.
+CONTEXT:  while locking tuple (0,1) in relation "hw6"
+
+```
+2023-08-17 14:56:30.656 UTC [62] LOG:  process 62 still waiting for ShareLock on transaction 738 after 203.240 ms
+2023-08-17 14:56:30.656 UTC [62] DETAIL:  Process holding the lock: 72. Wait queue: 62.
+2023-08-17 14:56:30.656 UTC [62] CONTEXT:  while locking tuple (0,2) in relation "hw6"
+2023-08-17 14:56:30.656 UTC [62] STATEMENT:  SELECT * FROM hw6 WHERE id = 2 FOR UPDATE;
+2023-08-17 14:56:41.890 UTC [72] LOG:  process 72 still waiting for ShareLock on transaction 739 after 205.063 ms
+2023-08-17 14:56:41.890 UTC [72] DETAIL:  Process holding the lock: 80. Wait queue: 72.
+2023-08-17 14:56:41.890 UTC [72] CONTEXT:  while locking tuple (0,3) in relation "hw6"
+2023-08-17 14:56:41.890 UTC [72] STATEMENT:  SELECT * FROM hw6 WHERE id = 3 FOR UPDATE;
+2023-08-17 14:57:18.810 UTC [80] LOG:  process 80 detected deadlock while waiting for ShareLock on transaction 737 after 201.903 ms
+2023-08-17 14:57:18.810 UTC [80] DETAIL:  Process holding the lock: 62. Wait queue: .
+2023-08-17 14:57:18.810 UTC [80] CONTEXT:  while locking tuple (0,1) in relation "hw6"
+2023-08-17 14:57:18.810 UTC [80] STATEMENT:  SELECT * FROM hw6 WHERE id = 1 FOR UPDATE;
+2023-08-17 14:57:18.810 UTC [80] ERROR:  deadlock detected
+2023-08-17 14:57:18.810 UTC [80] DETAIL:  Process 80 waits for ShareLock on transaction 737; blocked by process 62.
+        Process 62 waits for ShareLock on transaction 738; blocked by process 72.
+        Process 72 waits for ShareLock on transaction 739; blocked by process 80.
+        Process 80: SELECT * FROM hw6 WHERE id = 1 FOR UPDATE;
+        Process 62: SELECT * FROM hw6 WHERE id = 2 FOR UPDATE;
+        Process 72: SELECT * FROM hw6 WHERE id = 3 FOR UPDATE;
+2023-08-17 14:57:18.810 UTC [80] HINT:  See server log for query details.
+2023-08-17 14:57:18.810 UTC [80] CONTEXT:  while locking tuple (0,1) in relation "hw6"
+2023-08-17 14:57:18.810 UTC [80] STATEMENT:  SELECT * FROM hw6 WHERE id = 1 FOR UPDATE;
+2023-08-17 14:57:18.811 UTC [72] LOG:  process 72 acquired ShareLock on transaction 739 after 37126.745 ms
+2023-08-17 14:57:18.811 UTC [72] CONTEXT:  while locking tuple (0,3) in relation "hw6"
+2023-08-17 14:57:18.811 UTC [72] STATEMENT:  SELECT * FROM hw6 WHERE id = 3 FOR UPDATE;
+2023-08-17 14:59:23.613 UTC [49] LOG:  checkpoint starting: time
+2023-08-17 14:59:23.781 UTC [49] LOG:  checkpoint complete: wrote 2 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.111 s, sync=0.003 s, total=0.169 s; sync files=2, longest=0.003 s, average=0.002 s; distance=1 kB, estimate=3667 kB
+```
+
+Из лога винды id процессов и транзакций (и запрос в транзации) которые вызвали ERROR:  deadlock detected
+
 ## *****
 Могут ли две транзакции, выполняющие единственную команду UPDATE одной и той же таблицы (без where), заблокировать друг друга?
 Да, возможно. Так как UPDATE — эта команда блокирует строки по мере их обновления, при разном порядке обновления возмлжна взаиная блокировка.
